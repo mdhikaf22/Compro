@@ -23,7 +23,8 @@ def detect():
     Request body:
     {
         "image": "base64_encoded_image_string",
-        "ignore_zones": [{"x1": 0.1, "y1": 0.1, "x2": 0.3, "y2": 0.3}]  // optional
+        "ignore_zones": [{"x1": 0.1, "y1": 0.1, "x2": 0.3, "y2": 0.3}],  // optional
+        "detect_zones": [{"x1": 0.2, "y1": 0.2, "x2": 0.8, "y2": 0.8}]   // optional
     }
     """
     try:
@@ -36,41 +37,53 @@ def detect():
         image_data = base64.b64decode(data['image'])
         image = Image.open(io.BytesIO(image_data)).convert('RGB')
         
-        # Get ignore zones (normalized coordinates 0-1)
+        # Get zones (normalized coordinates 0-1)
         ignore_zones = data.get('ignore_zones', [])
+        detect_zones = data.get('detect_zones', [])
         
         # Process
         results = face_model.process_image(image)
         
-        # Filter out faces in ignore zones
-        if ignore_zones:
-            img_width, img_height = image.size
-            filtered_results = []
+        # Filter faces based on zones
+        img_width, img_height = image.size
+        filtered_results = []
+        
+        for result in results:
+            bbox = result.get('bbox', {})
+            # Get face center (normalized)
+            face_center_x = (bbox.get('x1', 0) + bbox.get('x2', 0)) / 2 / img_width
+            face_center_y = (bbox.get('y1', 0) + bbox.get('y2', 0)) / 2 / img_height
             
-            for result in results:
-                bbox = result.get('bbox', {})
-                # Get face center (normalized)
-                face_center_x = (bbox.get('x1', 0) + bbox.get('x2', 0)) / 2 / img_width
-                face_center_y = (bbox.get('y1', 0) + bbox.get('y2', 0)) / 2 / img_height
-                
-                # Check if face center is in any ignore zone
-                in_ignore_zone = False
-                for zone in ignore_zones:
+            # Check if face is in any ignore zone
+            in_ignore_zone = False
+            for zone in ignore_zones:
+                if (zone['x1'] <= face_center_x <= zone['x2'] and
+                    zone['y1'] <= face_center_y <= zone['y2']):
+                    in_ignore_zone = True
+                    break
+            
+            if in_ignore_zone:
+                continue  # Skip this face
+            
+            # Check if face is in detect zone (if detect zones are defined)
+            if detect_zones:
+                in_detect_zone = False
+                for zone in detect_zones:
                     if (zone['x1'] <= face_center_x <= zone['x2'] and
                         zone['y1'] <= face_center_y <= zone['y2']):
-                        in_ignore_zone = True
+                        in_detect_zone = True
                         break
                 
-                if not in_ignore_zone:
-                    filtered_results.append(result)
+                if not in_detect_zone:
+                    continue  # Skip - face is outside all detect zones
             
-            results = filtered_results
+            filtered_results.append(result)
         
         return jsonify({
             "success": True,
             "timestamp": datetime.now().isoformat(),
-            "faces_detected": len(results),
-            "results": results
+            "faces_detected": len(filtered_results),
+            "results": filtered_results
         })
         
     except Exception as e:

@@ -178,6 +178,7 @@ def webcam_page():
             }
             .zone-item.privacy { border-left: 3px solid #e17055; }
             .zone-item.ignore { border-left: 3px solid #6c5ce7; }
+            .zone-item.detect { border-left: 3px solid #00b894; }
             .zone-delete { 
                 background: none; 
                 border: none; 
@@ -260,6 +261,7 @@ def webcam_page():
                         <span style="width: 20px;"></span>
                         <button class="btn-orange" onclick="setDrawMode('privacy')" id="privacyBtn">🔒 Privacy Mask</button>
                         <button class="btn-purple" onclick="setDrawMode('ignore')" id="ignoreBtn">🚫 Ignore Zone</button>
+                        <button class="btn-green" onclick="setDrawMode('detect')" id="detectBtn" style="background:#00b894;">🎯 Detect Zone</button>
                         <button class="btn-gray" onclick="setDrawMode(null)">✋ Select</button>
                         <button class="btn-gray" onclick="clearAllZones()">🗑️ Clear All</button>
                     </div>
@@ -423,13 +425,19 @@ def webcam_page():
                     x1: z.x, y1: z.y, x2: z.x + z.w, y2: z.y + z.h
                 }));
                 
+                // Get detect zones (only detect faces inside these zones)
+                const detectZones = zones.filter(z => z.type === 'detect').map(z => ({
+                    x1: z.x, y1: z.y, x2: z.x + z.w, y2: z.y + z.h
+                }));
+                
                 try {
                     const response = await fetch('/api/detect', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ 
                             image: imageData,
-                            ignore_zones: ignoreZones
+                            ignore_zones: ignoreZones,
+                            detect_zones: detectZones
                         })
                     });
                     const data = await response.json();
@@ -445,6 +453,7 @@ def webcam_page():
                 drawMode = mode;
                 document.getElementById('privacyBtn').classList.toggle('btn-active', mode === 'privacy');
                 document.getElementById('ignoreBtn').classList.toggle('btn-active', mode === 'ignore');
+                document.getElementById('detectBtn').classList.toggle('btn-active', mode === 'detect');
                 overlay.style.cursor = mode ? 'crosshair' : 'default';
                 updateMode(mode ? 'drawing' : 'capture');
             }
@@ -467,7 +476,8 @@ def webcam_page():
                     drawZones();
                     
                     // Draw current selection
-                    ctx.strokeStyle = drawMode === 'privacy' ? '#e17055' : '#6c5ce7';
+                    const colors = { privacy: '#e17055', ignore: '#6c5ce7', detect: '#00b894' };
+                    ctx.strokeStyle = colors[drawMode] || '#fff';
                     ctx.lineWidth = 2;
                     ctx.setLineDash([5, 5]);
                     ctx.strokeRect(
@@ -503,6 +513,26 @@ def webcam_page():
             function drawZones() {
                 ctx.clearRect(0, 0, overlay.width, overlay.height);
                 
+                // Check if there are any detect zones
+                const detectZones = zones.filter(z => z.type === 'detect');
+                
+                // If detect zones exist, fill everything with ignore overlay first
+                if (detectZones.length > 0) {
+                    ctx.fillStyle = 'rgba(100, 100, 100, 0.5)';
+                    ctx.fillRect(0, 0, overlay.width, overlay.height);
+                    
+                    // Cut out the detect zones (make them clear)
+                    ctx.globalCompositeOperation = 'destination-out';
+                    detectZones.forEach(zone => {
+                        const x = zone.x * overlay.width;
+                        const y = zone.y * overlay.height;
+                        const w = zone.w * overlay.width;
+                        const h = zone.h * overlay.height;
+                        ctx.fillRect(x, y, w, h);
+                    });
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+                
                 zones.forEach(zone => {
                     const x = zone.x * overlay.width;
                     const y = zone.y * overlay.height;
@@ -518,7 +548,7 @@ def webcam_page():
                         ctx.fillStyle = '#fff';
                         ctx.font = '12px Arial';
                         ctx.fillText('🔒 PRIVACY', x + 5, y + 15);
-                    } else {
+                    } else if (zone.type === 'ignore') {
                         ctx.fillStyle = 'rgba(108, 92, 231, 0.3)';
                         ctx.fillRect(x, y, w, h);
                         ctx.strokeStyle = '#6c5ce7';
@@ -529,6 +559,15 @@ def webcam_page():
                         ctx.fillStyle = '#fff';
                         ctx.font = '12px Arial';
                         ctx.fillText('🚫 IGNORE', x + 5, y + 15);
+                    } else if (zone.type === 'detect') {
+                        ctx.fillStyle = 'rgba(0, 184, 148, 0.15)';
+                        ctx.fillRect(x, y, w, h);
+                        ctx.strokeStyle = '#00b894';
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(x, y, w, h);
+                        ctx.fillStyle = '#fff';
+                        ctx.font = 'bold 12px Arial';
+                        ctx.fillText('🎯 DETECT ZONE', x + 5, y + 18);
                     }
                 });
             }
@@ -574,9 +613,10 @@ def webcam_page():
                     return;
                 }
                 
+                const icons = { privacy: '🔒', ignore: '🚫', detect: '🎯' };
                 list.innerHTML = zones.map((z, i) => `
                     <div class="zone-item ${z.type}">
-                        <span>${z.type === 'privacy' ? '🔒' : '🚫'} Zone ${i + 1} (${(z.w * 100).toFixed(0)}% x ${(z.h * 100).toFixed(0)}%)</span>
+                        <span>${icons[z.type]} ${z.type.toUpperCase()} ${i + 1} (${(z.w * 100).toFixed(0)}% x ${(z.h * 100).toFixed(0)}%)</span>
                         <button class="zone-delete" onclick="deleteZone(${z.id})">✕</button>
                     </div>
                 `).join('');
