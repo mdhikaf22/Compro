@@ -245,7 +245,7 @@ def webcam_page():
             
             <div class="main-content">
                 <div class="video-section">
-                    <div id="modeIndicator" class="mode-indicator capture">📸 CAPTURE MODE - Click to detect</div>
+                    <div id="modeIndicator" class="mode-indicator capture">📸 CAPTURE MODE - Click to detect | <span id="fpsCounter">FPS: --</span></div>
                     
                     <div class="video-container">
                         <video id="video" autoplay playsinline></video>
@@ -326,6 +326,14 @@ def webcam_page():
             let lastDetectedFaces = new Set(); // Track last detected faces to avoid spam
             let lastDetectionTime = {}; // Track when each face was last logged
             
+            // FPS counter
+            let frameCount = 0;
+            let lastFpsTime = Date.now();
+            let currentFps = 0;
+            let videoFps = 0;
+            let isProcessing = false; // Prevent overlapping requests
+            let lastResults = []; // Cache last detection results
+            
             // Initialize
             function init() {
                 resizeOverlay();
@@ -351,7 +359,10 @@ def webcam_page():
                     video.style.display = 'block';
                     streamImg.style.display = 'none';
                     updateMode('capture');
-                    video.onloadedmetadata = resizeOverlay;
+                    video.onloadedmetadata = () => {
+                        resizeOverlay();
+                        requestAnimationFrame(renderLoop);
+                    };
                 } catch (err) {
                     alert('Camera error: ' + err.message + '\\n\\nTry using localhost or HTTPS.');
                 }
@@ -376,9 +387,10 @@ def webcam_page():
             function updateMode(mode) {
                 const indicator = document.getElementById('modeIndicator');
                 indicator.className = 'mode-indicator ' + mode;
-                if (mode === 'capture') indicator.textContent = '📸 CAPTURE MODE - Click Detect';
-                else if (mode === 'stream') indicator.textContent = '🎬 STREAM MODE - Live detection';
-                else if (mode === 'drawing') indicator.textContent = '✏️ DRAWING MODE - Draw zones on video';
+                const fpsText = '<span id="fpsCounter">Video: ' + videoFps + ' | Detect: ' + currentFps + ' FPS</span>';
+                if (mode === 'capture') indicator.innerHTML = '📸 CAPTURE MODE - Click Detect | ' + fpsText;
+                else if (mode === 'stream') indicator.innerHTML = '🎬 STREAM MODE - Live detection | ' + fpsText;
+                else if (mode === 'drawing') indicator.innerHTML = '✏️ DRAWING MODE - Draw zones on video | ' + fpsText;
             }
             
             // Auto detect
@@ -387,11 +399,77 @@ def webcam_page():
                 document.getElementById('autoBtn').textContent = autoDetect ? '🔄 Auto: ON' : '🔄 Auto: OFF';
                 
                 if (autoDetect) {
-                    autoInterval = setInterval(captureAndDetect, 1500); // Every 1.5s
+                    autoInterval = setInterval(captureAndDetect, 100); // Every 100ms (~10 FPS)
                 } else if (autoInterval) {
                     clearInterval(autoInterval);
                     autoInterval = null;
                 }
+            }
+            
+            // FPS update
+            function updateDetectFps() {
+                frameCount++;
+                const now = Date.now();
+                const elapsed = now - lastFpsTime;
+                
+                if (elapsed >= 1000) {
+                    currentFps = Math.round(frameCount * 1000 / elapsed);
+                    const fpsEl = document.getElementById('fpsCounter');
+                    if (fpsEl) fpsEl.textContent = 'Video: ' + videoFps + ' | Detect: ' + currentFps + ' FPS';
+                    frameCount = 0;
+                    lastFpsTime = now;
+                }
+            }
+            
+            // Video render loop - runs at full speed, redraws cached results
+            let videoFrameCount = 0;
+            let lastVideoFpsTime = Date.now();
+            
+            function renderLoop() {
+                videoFrameCount++;
+                const now = Date.now();
+                if (now - lastVideoFpsTime >= 1000) {
+                    videoFps = videoFrameCount;
+                    videoFrameCount = 0;
+                    lastVideoFpsTime = now;
+                    const fpsEl = document.getElementById('fpsCounter');
+                    if (fpsEl) fpsEl.textContent = 'Video: ' + videoFps + ' | Detect: ' + currentFps + ' FPS';
+                }
+                
+                // Redraw zones and cached detection results
+                drawZones();
+                if (lastResults.length > 0) {
+                    drawDetectionBoxes(lastResults);
+                }
+                
+                if (stream) {
+                    requestAnimationFrame(renderLoop);
+                }
+            }
+            
+            function drawDetectionBoxes(results) {
+                results.forEach(r => {
+                    if (!r.bbox) return;
+                    
+                    const scaleX = overlay.width / video.videoWidth;
+                    const scaleY = overlay.height / video.videoHeight;
+                    const x = r.bbox.x1 * scaleX;
+                    const y = r.bbox.y1 * scaleY;
+                    const w = (r.bbox.x2 - r.bbox.x1) * scaleX;
+                    const h = (r.bbox.y2 - r.bbox.y1) * scaleY;
+                    
+                    ctx.strokeStyle = r.authorized ? '#00b894' : '#d63031';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(x, y, w, h);
+                    
+                    const label = r.full_label + ' ' + r.confidence + '%';
+                    ctx.font = 'bold 14px Arial';
+                    const textWidth = ctx.measureText(label).width;
+                    ctx.fillStyle = r.authorized ? '#00b894' : '#d63031';
+                    ctx.fillRect(x, y - 25, textWidth + 15, 22);
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText(label, x + 7, y - 8);
+                });
             }
             
             // Capture & Detect
@@ -400,6 +478,12 @@ def webcam_page():
                     alert('Start camera first!');
                     return;
                 }
+                
+                // Skip if still processing previous frame
+                if (isProcessing) return;
+                isProcessing = true;
+                
+                updateDetectFps();
                 
                 // Create temp canvas
                 const tempCanvas = document.createElement('canvas');
@@ -442,9 +526,11 @@ def webcam_page():
                     });
                     const data = await response.json();
                     displayResults(data);
-                    drawDetections(data.results || []);
+                    lastResults = data.results || [];
                 } catch (err) {
                     console.error('Detection error:', err);
+                } finally {
+                    isProcessing = false;
                 }
             }
             
@@ -575,6 +661,8 @@ def webcam_page():
             function drawDetections(results) {
                 // Clear and redraw zones first
                 drawZones();
+                
+                if (!results || results.length === 0) return;
                 
                 results.forEach(r => {
                     if (!r.bbox) return;

@@ -2,11 +2,14 @@
 ============================================================
 CONFIG - Konfigurasi Aplikasi
 ============================================================
+Sesuai dengan: Model build/Compro_YOLOv8_Training.ipynb
 """
 
 import os
 
-# Role mapping
+# ============================================================
+# ROLE MAPPING - Untuk authorization
+# ============================================================
 ROLE_MAPPING = {
     "iksan": "Aslab",
     "akbar": "Aslab",
@@ -19,20 +22,46 @@ ROLE_MAPPING = {
     "yolanda": "Aslab",
 }
 
-# Class names (sesuai urutan di dataset)
+# ============================================================
+# CLASS NAMES - Sesuai urutan di ImageFolder dataset
+# ============================================================
 CLASS_NAMES = ['akbar', 'aprilianza', 'bian', 'fadhilah', 'falah', 'iksan', 'imelda', 'rifqy', 'yolanda']
 
-# Thresholds
-CONFIDENCE_THRESHOLD = 0.5
-FACE_DETECTION_THRESHOLD = 0.7
+# ============================================================
+# THRESHOLDS
+# ============================================================
+CONFIDENCE_THRESHOLD = 0.5       # Min confidence untuk klasifikasi ViT
+FACE_DETECTION_THRESHOLD = 0.35  # Min confidence untuk deteksi wajah YOLOv8
 
-# Paths
+# ============================================================
+# PATHS
+# ============================================================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATABASE_PATH = os.path.join(BASE_DIR, "access_logs.db")
-MODEL_PATH = os.path.join(BASE_DIR, "best_vit_mtcnn.pth")
-SCREENSHOTS_DIR = os.path.join(BASE_DIR, "screenshots")
 
-# Server config
+# Model paths - sesuai output dari notebook training
+VIT_MODEL_PATH = os.path.join(BASE_DIR, "best_vit_yolo.pth")      # ViT classifier
+YOLO_MODEL_PATH = os.path.join(BASE_DIR, "yolov8-face.pt")        # YOLOv8-face detector
+
+# Fallback ke model lama jika model baru belum ada
+if not os.path.exists(VIT_MODEL_PATH):
+    VIT_MODEL_PATH = os.path.join(BASE_DIR, "best_vit_mtcnn.pth")
+
+# Legacy alias
+MODEL_PATH = VIT_MODEL_PATH
+
+SCREENSHOTS_DIR = os.path.join(BASE_DIR, "screenshots")
+CONFIG_PATH = os.path.join(BASE_DIR, "Model build", "model_config.json")
+
+# ============================================================
+# DETECTION BACKEND
+# ============================================================
+# Options: 'yolo' (faster, ~15-30 FPS) or 'mtcnn' (slower, ~2-3 FPS)
+DETECTION_BACKEND = os.environ.get('DETECTION_BACKEND', 'yolo')
+
+# ============================================================
+# SERVER CONFIG
+# ============================================================
 HOST = '0.0.0.0'
 PORT = 5000
 DEBUG = False
