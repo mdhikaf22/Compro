@@ -167,7 +167,7 @@ python webcam_inference.py
 ### Threshold
 ```python
 CONFIDENCE_THRESHOLD = 0.5      # Threshold klasifikasi
-FACE_DETECTION_THRESHOLD = 0.7  # Threshold deteksi wajah MTCNN
+FACE_DETECTION_THRESHOLD = 0.7  #YOLO
 ```
 
 ### MTCNN Parameters
