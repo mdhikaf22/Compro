@@ -187,7 +187,7 @@ thresholds = [0.5, 0.6, 0.6]    # Threshold per stage
 ```
 Input Image
     ↓
-MTCNN (Face Detection)
+YOLOv8 (Face Detection)
     ↓
 Face Cropping + Padding (15%)
     ↓
