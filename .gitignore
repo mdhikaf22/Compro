@@ -8,6 +8,9 @@
 *.pt
 vit_mtcnn_model/
 
+# Exception: Allow specific model files (tracked with Git LFS)
+!Model build/best_vit_yolo.pth
+
 # Dataset (too large)
 vit_dataset/
 Computing_project-2/
