@@ -5,31 +5,22 @@ Sistem pengenalan wajah real-time menggunakan **MTCNN** untuk deteksi wajah dan 
 ## ⚡ Quick Start
 
 ```bash
-# 1. Clone repository
+# 1. Clone repository (dengan LFS untuk download model)
+git lfs install
 git clone https://github.com/mdhikaf22/Compro.git
 cd Compro
 
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Download model (WAJIB!)
-# Download dari: https://drive.google.com/file/d/YOUR_FILE_ID/view
-# Letakkan file 'best_vit_mtcnn.pth' di folder root project
-
-# 4. Jalankan server
+# 3. Jalankan server
 python app.py
 
-# 5. Buka browser
+# 4. Buka browser
 # http://localhost:5000/api/webcam
 ```
 
-## 📥 Download Model
-
-**PENTING:** File model tidak termasuk di repository karena terlalu besar.
-
-📁 **Download model di sini:** [Google Drive Link - best_vit_mtcnn.pth](https://drive.google.com/YOUR_LINK)
-
-Setelah download, letakkan file `best_vit_mtcnn.pth` di folder root project.
+> **Note:** Repository ini menggunakan Git LFS untuk file model. Pastikan `git lfs` terinstall sebelum clone.
 
 ## 📋 Deskripsi
 
