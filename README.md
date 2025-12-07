@@ -27,7 +27,7 @@ python app.py
 Proyek ini adalah sistem pengenalan wajah yang dirancang untuk keperluan akses kontrol (misalnya di depan pintu lab). Sistem dapat mendeteksi wajah dari webcam secara real-time dan mengklasifikasikan apakah orang tersebut **Authorized** atau **Not Authorized**.
 
 ### Fitur Utama
-- **Face Detection**: Menggunakan MTCNN (Multi-task Cascaded Convolutional Networks)
+- **Face Detection**: Menggunakan YOLO-face.pt
 - **Face Classification**: Menggunakan ViT (Vision Transformer) dari Google
 - **Real-time Inference**: Mendukung webcam untuk deteksi langsung
 - **REST API**: Backend Flask dengan endpoint untuk integrasi
