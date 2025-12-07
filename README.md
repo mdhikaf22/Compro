@@ -1,4 +1,4 @@
-# Face Recognition System - MTCNN + ViT
+# Face Recognition System - YOLO + ViT
 
 Sistem pengenalan wajah real-time menggunakan **MTCNN** untuk deteksi wajah dan **Vision Transformer (ViT)** untuk klasifikasi.
 
