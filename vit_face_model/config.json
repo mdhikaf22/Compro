@@ -1,0 +1,171 @@
+{
+  "model_name": "ViT Face Recognition",
+  "base_model": "google/vit-base-patch16-224-in21k",
+  "num_classes": 9,
+  "class_names": [
+    "akbar",
+    "aprilianza",
+    "bian",
+    "fadhilah",
+    "falah",
+    "iksan",
+    "imelda",
+    "rifqy",
+    "yolanda"
+  ],
+  "role_mapping": {
+    "iksan": "Aslab",
+    "akbar": "Aslab",
+    "aprilianza": "Aslab",
+    "bian": "Dosen",
+    "fadhilah": "Aslab",
+    "falah": "Aslab",
+    "imelda": "Aslab",
+    "rifqy": "Aslab",
+    "yolanda": "Aslab"
+  },
+  "best_val_accuracy": 99.3993993993994,
+  "total_epochs": 10,
+  "train_size": 1331,
+  "val_size": 333,
+  "training_history": [
+    {
+      "epoch": 1,
+      "train_loss": 26.679346591234207,
+      "train_acc": 99.84973703981969,
+      "val_acc": 98.7987987987988,
+      "epoch_time_sec": 20.73,
+      "cpu_percent": 71.7,
+      "memory_percent": 69.2,
+      "gpu_memory_gb": 1.31,
+      "gpu_load_percent": 71.0
+    },
+    {
+      "epoch": 2,
+      "train_loss": 19.67181086540222,
+      "train_acc": 99.92486851990984,
+      "val_acc": 99.09909909909909,
+      "epoch_time_sec": 20.4,
+      "cpu_percent": 74.3,
+      "memory_percent": 69.3,
+      "gpu_memory_gb": 1.31,
+      "gpu_load_percent": 76.0
+    },
+    {
+      "epoch": 3,
+      "train_loss": 15.631418362259865,
+      "train_acc": 100.0,
+      "val_acc": 99.09909909909909,
+      "epoch_time_sec": 20.13,
+      "cpu_percent": 72.4,
+      "memory_percent": 69.2,
+      "gpu_memory_gb": 1.31,
+      "gpu_load_percent": 69.0
+    },
+    {
+      "epoch": 4,
+      "train_loss": 13.003917500376701,
+      "train_acc": 100.0,
+      "val_acc": 98.7987987987988,
+      "epoch_time_sec": 19.95,
+      "cpu_percent": 65.3,
+      "memory_percent": 68.1,
+      "gpu_memory_gb": 1.31,
+      "gpu_load_percent": 80.0
+    },
+    {
+      "epoch": 5,
+      "train_loss": 11.091358125209808,
+      "train_acc": 100.0,
+      "val_acc": 99.09909909909909,
+      "epoch_time_sec": 20.15,
+      "cpu_percent": 68.4,
+      "memory_percent": 67.9,
+      "gpu_memory_gb": 1.31,
+      "gpu_load_percent": 69.0
+    },
+    {
+      "epoch": 6,
+      "train_loss": 9.613409526646137,
+      "train_acc": 100.0,
+      "val_acc": 99.09909909909909,
+      "epoch_time_sec": 20.13,
+      "cpu_percent": 66.4,
+      "memory_percent": 67.2,
+      "gpu_memory_gb": 1.31,
+      "gpu_load_percent": 79.0
+    },
+    {
+      "epoch": 7,
+      "train_loss": 8.467913389205933,
+      "train_acc": 100.0,
+      "val_acc": 99.09909909909909,
+      "epoch_time_sec": 19.96,
+      "cpu_percent": 64.3,
+      "memory_percent": 67.1,
+      "gpu_memory_gb": 1.31,
+      "gpu_load_percent": 82.0
+    },
+    {
+      "epoch": 8,
+      "train_loss": 7.513033904135227,
+      "train_acc": 100.0,
+      "val_acc": 99.3993993993994,
+      "epoch_time_sec": 20.09,
+      "cpu_percent": 65.5,
+      "memory_percent": 67.2,
+      "gpu_memory_gb": 1.31,
+      "gpu_load_percent": 67.0
+    },
+    {
+      "epoch": 9,
+      "train_loss": 6.713189318776131,
+      "train_acc": 100.0,
+      "val_acc": 99.09909909909909,
+      "epoch_time_sec": 20.03,
+      "cpu_percent": 72.5,
+      "memory_percent": 68.0,
+      "gpu_memory_gb": 1.31,
+      "gpu_load_percent": 74.0
+    },
+    {
+      "epoch": 10,
+      "train_loss": 6.039707750082016,
+      "train_acc": 100.0,
+      "val_acc": 99.09909909909909,
+      "epoch_time_sec": 20.06,
+      "cpu_percent": 65.9,
+      "memory_percent": 67.1,
+      "gpu_memory_gb": 1.31,
+      "gpu_load_percent": 67.0
+    }
+  ],
+  "training_time_seconds": 270.46,
+  "training_time_minutes": 4.51,
+  "input_size": 224,
+  "normalize_mean": [
+    0.5,
+    0.5,
+    0.5
+  ],
+  "normalize_std": [
+    0.5,
+    0.5,
+    0.5
+  ],
+  "training_started_at": "2025-12-06 19:54:21",
+  "training_completed_at": "2025-12-06 19:58:51",
+  "system_info": {
+    "device_used": "cuda",
+    "platform": "Windows",
+    "processor": "AMD64 Family 25 Model 117 Stepping 2, AuthenticAMD",
+    "python_version": "3.12.10",
+    "pytorch_version": "2.10.0.dev20251016+cu128",
+    "cuda_available": true,
+    "cuda_version": "12.8",
+    "gpu_name": "NVIDIA GeForce RTX 5060 Ti",
+    "gpu_memory_total_gb": 15.93,
+    "cpu_count": 16,
+    "memory_total_gb": 31.61
+  }
+}

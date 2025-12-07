@@ -1,0 +1,675 @@
+"""
+============================================================
+WEBCAM ROUTES - Webcam Interface & Video Stream
+============================================================
+"""
+
+from flask import Blueprint, Response, render_template_string, jsonify
+import cv2
+import threading
+import time
+
+from ..model import face_model
+
+webcam_bp = Blueprint('webcam', __name__)
+
+# Camera singleton
+camera = None
+camera_lock = threading.Lock()
+
+
+def get_camera():
+    """Get camera instance"""
+    global camera
+    if camera is None or not camera.isOpened():
+        if camera is not None:
+            camera.release()
+        camera = cv2.VideoCapture(0)
+        camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        camera.set(cv2.CAP_PROP_FPS, 30)
+        time.sleep(0.5)  # Wait for camera to initialize
+    return camera
+
+
+def release_camera():
+    """Release camera"""
+    global camera
+    if camera is not None:
+        camera.release()
+        camera = None
+
+
+def generate_frames():
+    """Generate frames with face detection overlay"""
+    cam = get_camera()
+    
+    if not cam.isOpened():
+        print("❌ Camera not available")
+        return
+    
+    print("✅ Stream started")
+    
+    try:
+        while True:
+            success, frame = cam.read()
+            
+            if not success or frame is None:
+                print("⚠️ Failed to read frame, retrying...")
+                time.sleep(0.1)
+                continue
+            
+            # Process frame with face detection
+            try:
+                processed_frame, results = face_model.process_frame(frame.copy())
+            except Exception as e:
+                print(f"⚠️ Process error: {e}")
+                processed_frame = frame
+            
+            # Encode frame
+            ret, buffer = cv2.imencode('.jpg', processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            if not ret:
+                continue
+                
+            frame_bytes = buffer.tobytes()
+            
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            
+            time.sleep(0.03)  # ~30 FPS
+            
+    except GeneratorExit:
+        print("✅ Stream stopped")
+    finally:
+        pass  # Don't release camera here to allow reconnection
+
+
+@webcam_bp.route('/api/stream')
+def video_stream():
+    """Video stream with face detection overlay"""
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
+@webcam_bp.route('/api/webcam')
+def webcam_page():
+    """Webcam interface page with Privacy Mask & Ignore Zone"""
+    html = '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Face Recognition - Webcam</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+                font-family: 'Segoe UI', Arial, sans-serif; 
+                background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+                min-height: 100vh;
+                color: white;
+                padding: 20px;
+            }
+            .container { max-width: 1400px; margin: 0 auto; }
+            h1 { text-align: center; margin-bottom: 20px; font-size: 1.8em; }
+            .main-content { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+            @media (max-width: 1000px) { .main-content { grid-template-columns: 1fr; } }
+            
+            .video-section {
+                background: rgba(255,255,255,0.1);
+                border-radius: 15px;
+                padding: 20px;
+            }
+            .video-container {
+                position: relative;
+                width: 100%;
+                background: #000;
+                border-radius: 10px;
+                overflow: hidden;
+            }
+            #video, #streamImg { width: 100%; display: block; }
+            #overlay {
+                position: absolute;
+                top: 0; left: 0;
+                width: 100%; height: 100%;
+                cursor: crosshair;
+            }
+            #streamImg { display: none; }
+            
+            .toolbar {
+                display: flex;
+                gap: 8px;
+                margin: 15px 0;
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+            button {
+                padding: 10px 20px;
+                font-size: 14px;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                transition: all 0.2s;
+                font-weight: 600;
+            }
+            button:hover { transform: scale(1.03); }
+            .btn-green { background: #00b894; color: white; }
+            .btn-red { background: #d63031; color: white; }
+            .btn-blue { background: #0984e3; color: white; }
+            .btn-orange { background: #e17055; color: white; }
+            .btn-purple { background: #6c5ce7; color: white; }
+            .btn-gray { background: #636e72; color: white; }
+            .btn-active { box-shadow: 0 0 0 3px rgba(255,255,255,0.5); }
+            
+            .zone-tools {
+                background: rgba(0,0,0,0.3);
+                border-radius: 10px;
+                padding: 15px;
+                margin-top: 15px;
+            }
+            .zone-tools h3 { font-size: 1em; margin-bottom: 10px; color: #dfe6e9; }
+            .zone-list { max-height: 150px; overflow-y: auto; }
+            .zone-item {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 8px 12px;
+                background: rgba(255,255,255,0.1);
+                border-radius: 6px;
+                margin-bottom: 5px;
+                font-size: 0.85em;
+            }
+            .zone-item.privacy { border-left: 3px solid #e17055; }
+            .zone-item.ignore { border-left: 3px solid #6c5ce7; }
+            .zone-delete { 
+                background: none; 
+                border: none; 
+                color: #ff7675; 
+                cursor: pointer;
+                padding: 2px 8px;
+            }
+            
+            .results-section {
+                background: rgba(255,255,255,0.1);
+                border-radius: 15px;
+                padding: 20px;
+            }
+            h2 { margin-bottom: 15px; font-size: 1.2em; border-bottom: 2px solid rgba(255,255,255,0.2); padding-bottom: 10px; }
+            #results { max-height: 300px; overflow-y: auto; }
+            .result-card {
+                background: rgba(255,255,255,0.1);
+                border-radius: 10px;
+                padding: 12px;
+                margin-bottom: 8px;
+                border-left: 4px solid;
+            }
+            .result-card.authorized { border-color: #00b894; }
+            .result-card.unauthorized { border-color: #d63031; }
+            .result-name { font-size: 1.1em; font-weight: bold; }
+            .result-info { font-size: 0.8em; color: #b2bec3; margin-top: 5px; }
+            .status-badge {
+                display: inline-block;
+                padding: 3px 10px;
+                border-radius: 15px;
+                font-size: 0.75em;
+                margin-top: 5px;
+            }
+            .status-badge.authorized { background: #00b894; }
+            .status-badge.unauthorized { background: #d63031; }
+            
+            .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 15px; }
+            .stat-card { background: rgba(255,255,255,0.1); border-radius: 8px; padding: 12px; text-align: center; }
+            .stat-value { font-size: 1.5em; font-weight: bold; }
+            .stat-label { font-size: 0.7em; color: #b2bec3; }
+            
+            .no-results { text-align: center; color: #b2bec3; padding: 30px; }
+            .mode-indicator {
+                text-align: center;
+                padding: 8px;
+                border-radius: 8px;
+                margin-bottom: 10px;
+                font-weight: bold;
+            }
+            .mode-indicator.capture { background: rgba(9, 132, 227, 0.3); }
+            .mode-indicator.stream { background: rgba(0, 184, 148, 0.3); }
+            .mode-indicator.drawing { background: rgba(225, 112, 85, 0.3); }
+            
+            .log-section { margin-top: 20px; }
+            #logList { max-height: 200px; overflow-y: auto; font-size: 0.8em; }
+            .log-item { padding: 5px 10px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+            .log-item.auth { color: #00b894; }
+            .log-item.unauth { color: #d63031; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🎥 Face Recognition System</h1>
+            
+            <div class="main-content">
+                <div class="video-section">
+                    <div id="modeIndicator" class="mode-indicator capture">📸 CAPTURE MODE - Click to detect</div>
+                    
+                    <div class="video-container">
+                        <video id="video" autoplay playsinline></video>
+                        <img id="streamImg" src="">
+                        <canvas id="overlay"></canvas>
+                    </div>
+                    
+                    <div class="toolbar">
+                        <button class="btn-green" onclick="startCamera()">▶ Start</button>
+                        <button class="btn-red" onclick="stopAll()">⏹ Stop</button>
+                        <button class="btn-blue" onclick="captureAndDetect()">📸 Detect</button>
+                        <button class="btn-blue" onclick="toggleAutoDetect()" id="autoBtn">🔄 Auto: OFF</button>
+                        <span style="width: 20px;"></span>
+                        <button class="btn-orange" onclick="setDrawMode('privacy')" id="privacyBtn">🔒 Privacy Mask</button>
+                        <button class="btn-purple" onclick="setDrawMode('ignore')" id="ignoreBtn">🚫 Ignore Zone</button>
+                        <button class="btn-gray" onclick="setDrawMode(null)">✋ Select</button>
+                        <button class="btn-gray" onclick="clearAllZones()">🗑️ Clear All</button>
+                    </div>
+                    
+                    <div class="zone-tools">
+                        <h3>📍 Zones (<span id="zoneCount">0</span>)</h3>
+                        <div class="zone-list" id="zoneList">
+                            <div class="no-results">No zones defined. Draw on video to add.</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="results-section">
+                    <h2>📋 Detection Results</h2>
+                    <div id="results">
+                        <div class="no-results">
+                            <p>No faces detected yet.</p>
+                            <p>Click "Detect" or enable "Auto".</p>
+                        </div>
+                    </div>
+                    
+                    <div class="stats">
+                        <div class="stat-card">
+                            <div class="stat-value" id="totalDetections">0</div>
+                            <div class="stat-label">Total</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="authorizedCount" style="color: #00b894;">0</div>
+                            <div class="stat-label">Authorized</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="unauthorizedCount" style="color: #d63031;">0</div>
+                            <div class="stat-label">Unauthorized</div>
+                        </div>
+                    </div>
+                    
+                    <div class="log-section">
+                        <h2>📜 Access Log</h2>
+                        <div id="logList"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+            // Elements
+            const video = document.getElementById('video');
+            const streamImg = document.getElementById('streamImg');
+            const overlay = document.getElementById('overlay');
+            const ctx = overlay.getContext('2d');
+            
+            // State
+            let stream = null;
+            let autoDetect = false;
+            let autoInterval = null;
+            let drawMode = null; // 'privacy', 'ignore', or null
+            let zones = []; // {type, x, y, w, h}
+            let isDrawing = false;
+            let startX, startY;
+            let stats = { total: 0, authorized: 0, unauthorized: 0 };
+            let logs = [];
+            let lastDetectedFaces = new Set(); // Track last detected faces to avoid spam
+            let lastDetectionTime = {}; // Track when each face was last logged
+            
+            // Initialize
+            function init() {
+                resizeOverlay();
+                window.addEventListener('resize', resizeOverlay);
+                setupDrawing();
+                startCamera();
+            }
+            
+            function resizeOverlay() {
+                const rect = video.getBoundingClientRect();
+                overlay.width = rect.width;
+                overlay.height = rect.height;
+                drawZones();
+            }
+            
+            // Camera
+            async function startCamera() {
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { width: 1280, height: 720, facingMode: 'user' } 
+                    });
+                    video.srcObject = stream;
+                    video.style.display = 'block';
+                    streamImg.style.display = 'none';
+                    updateMode('capture');
+                    video.onloadedmetadata = resizeOverlay;
+                } catch (err) {
+                    alert('Camera error: ' + err.message + '\\n\\nTry using localhost or HTTPS.');
+                }
+            }
+            
+            function stopAll() {
+                if (stream) {
+                    stream.getTracks().forEach(t => t.stop());
+                    video.srcObject = null;
+                }
+                if (autoInterval) {
+                    clearInterval(autoInterval);
+                    autoInterval = null;
+                    autoDetect = false;
+                    document.getElementById('autoBtn').textContent = '🔄 Auto: OFF';
+                }
+                streamImg.src = '';
+                streamImg.style.display = 'none';
+                updateMode('capture');
+            }
+            
+            function updateMode(mode) {
+                const indicator = document.getElementById('modeIndicator');
+                indicator.className = 'mode-indicator ' + mode;
+                if (mode === 'capture') indicator.textContent = '📸 CAPTURE MODE - Click Detect';
+                else if (mode === 'stream') indicator.textContent = '🎬 STREAM MODE - Live detection';
+                else if (mode === 'drawing') indicator.textContent = '✏️ DRAWING MODE - Draw zones on video';
+            }
+            
+            // Auto detect
+            function toggleAutoDetect() {
+                autoDetect = !autoDetect;
+                document.getElementById('autoBtn').textContent = autoDetect ? '🔄 Auto: ON' : '🔄 Auto: OFF';
+                
+                if (autoDetect) {
+                    autoInterval = setInterval(captureAndDetect, 1500); // Every 1.5s
+                } else if (autoInterval) {
+                    clearInterval(autoInterval);
+                    autoInterval = null;
+                }
+            }
+            
+            // Capture & Detect
+            async function captureAndDetect() {
+                if (!stream) {
+                    alert('Start camera first!');
+                    return;
+                }
+                
+                // Create temp canvas
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = video.videoWidth;
+                tempCanvas.height = video.videoHeight;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.drawImage(video, 0, 0);
+                
+                // Apply privacy mask (black out areas)
+                zones.filter(z => z.type === 'privacy').forEach(zone => {
+                    const sx = zone.x * video.videoWidth;
+                    const sy = zone.y * video.videoHeight;
+                    const sw = zone.w * video.videoWidth;
+                    const sh = zone.h * video.videoHeight;
+                    tempCtx.fillStyle = '#000';
+                    tempCtx.fillRect(sx, sy, sw, sh);
+                });
+                
+                const imageData = tempCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+                
+                // Get ignore zones (normalized coordinates)
+                const ignoreZones = zones.filter(z => z.type === 'ignore').map(z => ({
+                    x1: z.x, y1: z.y, x2: z.x + z.w, y2: z.y + z.h
+                }));
+                
+                try {
+                    const response = await fetch('/api/detect', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            image: imageData,
+                            ignore_zones: ignoreZones
+                        })
+                    });
+                    const data = await response.json();
+                    displayResults(data);
+                    drawDetections(data.results || []);
+                } catch (err) {
+                    console.error('Detection error:', err);
+                }
+            }
+            
+            // Drawing zones
+            function setDrawMode(mode) {
+                drawMode = mode;
+                document.getElementById('privacyBtn').classList.toggle('btn-active', mode === 'privacy');
+                document.getElementById('ignoreBtn').classList.toggle('btn-active', mode === 'ignore');
+                overlay.style.cursor = mode ? 'crosshair' : 'default';
+                updateMode(mode ? 'drawing' : 'capture');
+            }
+            
+            function setupDrawing() {
+                overlay.addEventListener('mousedown', (e) => {
+                    if (!drawMode) return;
+                    isDrawing = true;
+                    const rect = overlay.getBoundingClientRect();
+                    startX = (e.clientX - rect.left) / rect.width;
+                    startY = (e.clientY - rect.top) / rect.height;
+                });
+                
+                overlay.addEventListener('mousemove', (e) => {
+                    if (!isDrawing) return;
+                    const rect = overlay.getBoundingClientRect();
+                    const currentX = (e.clientX - rect.left) / rect.width;
+                    const currentY = (e.clientY - rect.top) / rect.height;
+                    
+                    drawZones();
+                    
+                    // Draw current selection
+                    ctx.strokeStyle = drawMode === 'privacy' ? '#e17055' : '#6c5ce7';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    ctx.strokeRect(
+                        startX * overlay.width,
+                        startY * overlay.height,
+                        (currentX - startX) * overlay.width,
+                        (currentY - startY) * overlay.height
+                    );
+                    ctx.setLineDash([]);
+                });
+                
+                overlay.addEventListener('mouseup', (e) => {
+                    if (!isDrawing) return;
+                    isDrawing = false;
+                    
+                    const rect = overlay.getBoundingClientRect();
+                    const endX = (e.clientX - rect.left) / rect.width;
+                    const endY = (e.clientY - rect.top) / rect.height;
+                    
+                    const x = Math.min(startX, endX);
+                    const y = Math.min(startY, endY);
+                    const w = Math.abs(endX - startX);
+                    const h = Math.abs(endY - startY);
+                    
+                    if (w > 0.02 && h > 0.02) { // Min size
+                        zones.push({ type: drawMode, x, y, w, h, id: Date.now() });
+                        updateZoneList();
+                        drawZones();
+                    }
+                });
+            }
+            
+            function drawZones() {
+                ctx.clearRect(0, 0, overlay.width, overlay.height);
+                
+                zones.forEach(zone => {
+                    const x = zone.x * overlay.width;
+                    const y = zone.y * overlay.height;
+                    const w = zone.w * overlay.width;
+                    const h = zone.h * overlay.height;
+                    
+                    if (zone.type === 'privacy') {
+                        ctx.fillStyle = 'rgba(225, 112, 85, 0.5)';
+                        ctx.fillRect(x, y, w, h);
+                        ctx.strokeStyle = '#e17055';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(x, y, w, h);
+                        ctx.fillStyle = '#fff';
+                        ctx.font = '12px Arial';
+                        ctx.fillText('🔒 PRIVACY', x + 5, y + 15);
+                    } else {
+                        ctx.fillStyle = 'rgba(108, 92, 231, 0.3)';
+                        ctx.fillRect(x, y, w, h);
+                        ctx.strokeStyle = '#6c5ce7';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([5, 5]);
+                        ctx.strokeRect(x, y, w, h);
+                        ctx.setLineDash([]);
+                        ctx.fillStyle = '#fff';
+                        ctx.font = '12px Arial';
+                        ctx.fillText('🚫 IGNORE', x + 5, y + 15);
+                    }
+                });
+            }
+            
+            function drawDetections(results) {
+                // Clear and redraw zones first
+                drawZones();
+                
+                results.forEach(r => {
+                    if (!r.bbox) return;
+                    
+                    // Convert bbox to overlay coordinates
+                    const scaleX = overlay.width / video.videoWidth;
+                    const scaleY = overlay.height / video.videoHeight;
+                    const x = r.bbox.x1 * scaleX;
+                    const y = r.bbox.y1 * scaleY;
+                    const w = (r.bbox.x2 - r.bbox.x1) * scaleX;
+                    const h = (r.bbox.y2 - r.bbox.y1) * scaleY;
+                    
+                    ctx.strokeStyle = r.authorized ? '#00b894' : '#d63031';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(x, y, w, h);
+                    
+                    // Label background
+                    const label = r.full_label + ' ' + r.confidence + '%';
+                    ctx.font = 'bold 14px Arial';
+                    const textWidth = ctx.measureText(label).width;
+                    ctx.fillStyle = r.authorized ? '#00b894' : '#d63031';
+                    ctx.fillRect(x, y - 25, textWidth + 15, 22);
+                    
+                    // Label text
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText(label, x + 7, y - 8);
+                });
+            }
+            
+            function updateZoneList() {
+                const list = document.getElementById('zoneList');
+                document.getElementById('zoneCount').textContent = zones.length;
+                
+                if (zones.length === 0) {
+                    list.innerHTML = '<div class="no-results">No zones defined.</div>';
+                    return;
+                }
+                
+                list.innerHTML = zones.map((z, i) => `
+                    <div class="zone-item ${z.type}">
+                        <span>${z.type === 'privacy' ? '🔒' : '🚫'} Zone ${i + 1} (${(z.w * 100).toFixed(0)}% x ${(z.h * 100).toFixed(0)}%)</span>
+                        <button class="zone-delete" onclick="deleteZone(${z.id})">✕</button>
+                    </div>
+                `).join('');
+            }
+            
+            function deleteZone(id) {
+                zones = zones.filter(z => z.id !== id);
+                updateZoneList();
+                drawZones();
+            }
+            
+            function clearAllZones() {
+                zones = [];
+                updateZoneList();
+                drawZones();
+            }
+            
+            // Results
+            function displayResults(data) {
+                const resultsDiv = document.getElementById('results');
+                
+                if (!data.results || data.results.length === 0) {
+                    resultsDiv.innerHTML = '<div class="no-results">No faces detected.</div>';
+                    return;
+                }
+                
+                let html = '';
+                data.results.forEach(r => {
+                    const statusClass = r.authorized ? 'authorized' : 'unauthorized';
+                    const statusText = r.authorized ? '✅ AUTHORIZED' : '❌ DENIED';
+                    
+                    html += `
+                        <div class="result-card ${statusClass}">
+                            <div class="result-name">${r.full_label}</div>
+                            <div class="result-info">Confidence: ${r.confidence}%</div>
+                            <span class="status-badge ${statusClass}">${statusText}</span>
+                        </div>
+                    `;
+                    
+                    // Add to log (returns true if actually logged, false if cooldown)
+                    const wasLogged = addLog(r);
+                    
+                    // Only update stats if actually logged (not duplicate)
+                    if (wasLogged) {
+                        stats.total++;
+                        if (r.authorized) stats.authorized++;
+                        else stats.unauthorized++;
+                    }
+                });
+                
+                resultsDiv.innerHTML = html;
+                updateStats();
+            }
+            
+            function updateStats() {
+                document.getElementById('totalDetections').textContent = stats.total;
+                document.getElementById('authorizedCount').textContent = stats.authorized;
+                document.getElementById('unauthorizedCount').textContent = stats.unauthorized;
+            }
+            
+            function addLog(result) {
+                const now = Date.now();
+                const faceKey = result.name.toLowerCase(); // Use name as key
+                const cooldownMs = 10000; // 10 seconds cooldown per face
+                
+                // Check if this face was logged recently
+                if (lastDetectionTime[faceKey] && (now - lastDetectionTime[faceKey]) < cooldownMs) {
+                    // Skip logging - same face detected within cooldown
+                    return false;
+                }
+                
+                // Update last detection time
+                lastDetectionTime[faceKey] = now;
+                
+                const time = new Date().toLocaleTimeString();
+                const logClass = result.authorized ? 'auth' : 'unauth';
+                const status = result.authorized ? '✅' : '❌';
+                
+                logs.unshift({ time, result, logClass, status });
+                if (logs.length > 50) logs.pop();
+                
+                const logList = document.getElementById('logList');
+                logList.innerHTML = logs.map(l => 
+                    `<div class="log-item ${l.logClass}">${l.time} ${l.status} ${l.result.full_label} (${l.result.confidence}%)</div>`
+                ).join('');
+                
+                return true; // Log was added
+            }
+            
+            // Start
+            init();
+        </script>
+    </body>
+    </html>
+    '''
+    return render_template_string(html)
